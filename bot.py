@@ -97,6 +97,7 @@ async def record_payment(coin, txid, amount, status):
 # =========================
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 async def notify(message):
