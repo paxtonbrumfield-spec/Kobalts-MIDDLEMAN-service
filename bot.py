@@ -7,6 +7,7 @@ import discord
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from discord.ext import commands, tasks
+from discord import app_commands
 
 load_dotenv()
 
@@ -106,22 +107,10 @@ bot = commands.Bot(
     intents=intents
 )
 
-# Enable slash commands in all three contexts.
-# These defaults apply to commands registered below.
 
-bot.tree.allowed_contexts = discord.app_commands.AppCommandContext(
-    guild=True,
-    dm_channel=True,
-    private_channel=True
-)
-
-# Allow both server installs and personal user installs.
-
-bot.tree.allowed_installs = discord.app_commands.AppInstallationType(
-    guild=True,
-    user=True
-)
-
+# =========================
+# NOTIFICATIONS
+# =========================
 
 async def notify(message):
     try:
@@ -135,6 +124,10 @@ async def notify(message):
     except Exception as e:
         print("Notification error:", e)
 
+
+# =========================
+# EMBEDS
+# =========================
 
 def make_embed(coin, address):
     embed = discord.Embed(
@@ -168,47 +161,223 @@ def make_embed(coin, address):
 
 
 # =========================
+# DEAL CONFIRMATION BUTTON
+# =========================
+
+class ConfirmView(discord.ui.View):
+
+    def __init__(self, person1, person2):
+        super().__init__(timeout=3600)
+
+        self.person1 = person1
+        self.person2 = person2
+        self.participants = {person1.id, person2.id}
+        self.confirmed = set()
+
+    @discord.ui.button(
+        label="Confirm (0/2)",
+        style=discord.ButtonStyle.success,
+        emoji="✅"
+    )
+    async def confirm_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        user_id = interaction.user.id
+
+        if user_id not in self.participants:
+            await interaction.response.send_message(
+                "You are not part of this deal.",
+                ephemeral=True
+            )
+            return
+
+        if user_id in self.confirmed:
+            await interaction.response.send_message(
+                "You have already confirmed this deal.",
+                ephemeral=True
+            )
+            return
+
+        self.confirmed.add(user_id)
+
+        if len(self.confirmed) == 2:
+
+            button.label = "Both Confirmed"
+            button.disabled = True
+
+            await interaction.response.edit_message(
+                content=(
+                    "✅ **DEAL CONFIRMED!**\n\n"
+                    f"{self.person1.mention} and "
+                    f"{self.person2.mention} have both confirmed "
+                    "the deal details."
+                ),
+                view=self
+            )
+
+        else:
+
+            button.label = "Confirm (1/2)"
+
+            await interaction.response.edit_message(
+                content=(
+                    f"✅ {interaction.user.mention} confirmed.\n"
+                    "Waiting for the other person to confirm."
+                ),
+                view=self
+            )
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+# =========================
+# COMMAND CONTEXT SETTINGS
+# =========================
+
+def dm_contexts():
+    return app_commands.allowed_contexts(
+        guilds=True,
+        dms=True,
+        private_channels=True
+    )
+
+
+def install_types():
+    return app_commands.allowed_installs(
+        guilds=True,
+        users=True
+    )
+
+
+# =========================
 # SLASH COMMANDS
 # =========================
 
-@bot.tree.command(name="btc", description="Post BTC address + TOS")
+@bot.tree.command(
+    name="btc",
+    description="Post BTC address + TOS"
+)
+@dm_contexts()
+@install_types()
 async def btc_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         embed=make_embed("btc", ADDRESSES["btc"])
     )
 
 
-@bot.tree.command(name="ltc", description="Post LTC address + TOS")
+@bot.tree.command(
+    name="ltc",
+    description="Post LTC address + TOS"
+)
+@dm_contexts()
+@install_types()
 async def ltc_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         embed=make_embed("ltc", ADDRESSES["ltc"])
     )
 
 
-@bot.tree.command(name="sol", description="Post SOL address + TOS")
+@bot.tree.command(
+    name="sol",
+    description="Post SOL address + TOS"
+)
+@dm_contexts()
+@install_types()
 async def sol_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         embed=make_embed("sol", ADDRESSES["sol"])
     )
 
 
-@bot.tree.command(name="usdt", description="Post USDT ERC-20 address + TOS")
+@bot.tree.command(
+    name="usdt",
+    description="Post USDT ERC-20 address + TOS"
+)
+@dm_contexts()
+@install_types()
 async def usdt_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         embed=make_embed("usdt", ADDRESSES["usdt"])
     )
 
 
-@bot.tree.command(name="vouch", description="Create a customer vouch")
+# =========================
+# VOUCH COMMAND
+# =========================
+
+@bot.tree.command(
+    name="vouch",
+    description="Create a customer vouch"
+)
+@dm_contexts()
+@install_types()
 async def vouch_cmd(
     interaction: discord.Interaction,
     message: str
 ):
+
     safe_message = message.replace("```", "'''")
 
     await interaction.response.send_message(
-        f"**Please copy and paste this vouch:**\n\n"
+        "**Please copy and paste this vouch:**\n\n"
         f"```{safe_message}```"
+    )
+
+
+# =========================
+# TOS COMMAND
+# =========================
+
+@bot.tree.command(
+    name="tos",
+    description="Display the Terms of Service"
+)
+@dm_contexts()
+@install_types()
+async def tos_cmd(interaction: discord.Interaction):
+
+    await interaction.response.send_message(TOS)
+
+
+# =========================
+# CONFIRM COMMAND
+# =========================
+
+@bot.tree.command(
+    name="confirm",
+    description="Both people must confirm the deal"
+)
+@dm_contexts()
+@install_types()
+async def confirm_cmd(
+    interaction: discord.Interaction,
+    other_person: discord.User
+):
+
+    if other_person.id == interaction.user.id:
+        await interaction.response.send_message(
+            "You cannot confirm a deal with yourself.",
+            ephemeral=True
+        )
+        return
+
+    view = ConfirmView(
+        interaction.user,
+        other_person
+    )
+
+    await interaction.response.send_message(
+        "**DEAL CONFIRMATION**\n\n"
+        f"Person 1: {interaction.user.mention}\n"
+        f"Person 2: {other_person.mention}\n\n"
+        "Both people must review the deal details "
+        "and press the button below to confirm.",
+        view=view
     )
 
 
@@ -217,6 +386,7 @@ async def vouch_cmd(
 # =========================
 
 async def check_btc(session):
+
     url = f"https://mempool.space/api/address/{ADDRESSES['btc']}/txs"
 
     async with session.get(url) as resp:
@@ -226,6 +396,7 @@ async def check_btc(session):
         txs = await resp.json()
 
     for tx in txs[:25]:
+
         txid = tx["txid"]
         received = 0
 
@@ -255,6 +426,7 @@ async def check_btc(session):
 # =========================
 
 async def check_ltc(session):
+
     url = (
         f"https://api.blockcypher.com/v1/ltc/main/addrs/"
         f"{ADDRESSES['ltc']}/full?limit=25"
@@ -267,6 +439,7 @@ async def check_ltc(session):
         data = await resp.json()
 
     for tx in data.get("txs", []):
+
         txid = tx["hash"]
         received = 0
 
@@ -296,6 +469,7 @@ async def check_ltc(session):
 # =========================
 
 async def check_sol(session):
+
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -310,12 +484,14 @@ async def check_sol(session):
         "https://api.mainnet-beta.solana.com",
         json=payload
     ) as resp:
+
         if resp.status != 200:
             return
 
         data = await resp.json()
 
     for item in data.get("result", []):
+
         signature = item["signature"]
 
         if item.get("err") is not None:
@@ -339,6 +515,7 @@ async def check_sol(session):
             "https://api.mainnet-beta.solana.com",
             json=tx_payload
         ) as resp:
+
             if resp.status != 200:
                 continue
 
@@ -402,6 +579,7 @@ async def check_sol(session):
 # =========================
 
 async def check_usdt(session):
+
     if not ETHERSCAN_API_KEY:
         return
 
@@ -421,6 +599,7 @@ async def check_usdt(session):
         "https://api.etherscan.io/v2/api",
         params=params
     ) as resp:
+
         if resp.status != 200:
             return
 
@@ -430,6 +609,7 @@ async def check_usdt(session):
         return
 
     for tx in data.get("result", []):
+
         if tx.get("to", "").lower() != ADDRESSES["usdt"].lower():
             continue
 
@@ -462,9 +642,11 @@ async def check_usdt(session):
 
 @tasks.loop(minutes=2)
 async def check_payments():
+
     timeout = aiohttp.ClientTimeout(total=25)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
+
         checks = [
             ("BTC", check_btc),
             ("LTC", check_ltc),
@@ -473,8 +655,10 @@ async def check_payments():
         ]
 
         for name, checker in checks:
+
             try:
                 await checker(session)
+
             except Exception as e:
                 print(f"{name} payment check error:", e)
 
@@ -490,11 +674,13 @@ async def before_payment_check():
 
 @bot.event
 async def on_ready():
+
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands")
+
     except Exception as e:
         print("Sync error:", e)
 
@@ -507,8 +693,11 @@ async def on_ready():
 # =========================
 
 if __name__ == "__main__":
+
     if not TOKEN:
-        raise RuntimeError("DISCORD_TOKEN is missing from your .env file.")
+        raise RuntimeError(
+            "DISCORD_TOKEN is missing from your .env file."
+        )
 
     init_database()
     bot.run(TOKEN)
