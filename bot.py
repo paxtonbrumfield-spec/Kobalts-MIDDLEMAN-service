@@ -1,6 +1,5 @@
 
 import os
-import asyncio
 import sqlite3
 import aiohttp
 import discord
@@ -58,12 +57,14 @@ def init_database():
             )
         """)
 
+
 def get_payment(coin, txid):
     with sqlite3.connect(DATABASE) as db:
         return db.execute(
             "SELECT amount, status FROM payments WHERE coin=? AND txid=?",
             (coin, txid)
         ).fetchone()
+
 
 async def record_payment(coin, txid, amount, status):
     previous = get_payment(coin, txid)
@@ -92,13 +93,35 @@ async def record_payment(coin, txid, amount, status):
             f"TX: `{txid}`"
         )
 
+
 # =========================
 # DISCORD BOT
 # =========================
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
+# Enable slash commands in all three contexts.
+# These defaults apply to commands registered below.
+
+bot.tree.allowed_contexts = discord.app_commands.AppCommandContext(
+    guild=True,
+    dm_channel=True,
+    private_channel=True
+)
+
+# Allow both server installs and personal user installs.
+
+bot.tree.allowed_installs = discord.app_commands.AppInstallationType(
+    guild=True,
+    user=True
+)
+
 
 async def notify(message):
     try:
@@ -111,6 +134,7 @@ async def notify(message):
 
     except Exception as e:
         print("Notification error:", e)
+
 
 def make_embed(coin, address):
     embed = discord.Embed(
@@ -142,6 +166,7 @@ def make_embed(coin, address):
 
     return embed
 
+
 # =========================
 # SLASH COMMANDS
 # =========================
@@ -152,11 +177,13 @@ async def btc_cmd(interaction: discord.Interaction):
         embed=make_embed("btc", ADDRESSES["btc"])
     )
 
+
 @bot.tree.command(name="ltc", description="Post LTC address + TOS")
 async def ltc_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         embed=make_embed("ltc", ADDRESSES["ltc"])
     )
+
 
 @bot.tree.command(name="sol", description="Post SOL address + TOS")
 async def sol_cmd(interaction: discord.Interaction):
@@ -164,11 +191,13 @@ async def sol_cmd(interaction: discord.Interaction):
         embed=make_embed("sol", ADDRESSES["sol"])
     )
 
+
 @bot.tree.command(name="usdt", description="Post USDT ERC-20 address + TOS")
 async def usdt_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         embed=make_embed("usdt", ADDRESSES["usdt"])
     )
+
 
 @bot.tree.command(name="vouch", description="Create a customer vouch")
 async def vouch_cmd(
@@ -181,6 +210,7 @@ async def vouch_cmd(
         f"**Please copy and paste this vouch:**\n\n"
         f"```{safe_message}```"
     )
+
 
 # =========================
 # BITCOIN MONITOR
@@ -218,6 +248,7 @@ async def check_btc(session):
             f"{received / 100000000:.8f}",
             status
         )
+
 
 # =========================
 # LITECOIN MONITOR
@@ -258,6 +289,7 @@ async def check_ltc(session):
             f"{received / 100000000:.8f}",
             status
         )
+
 
 # =========================
 # SOLANA MONITOR
@@ -364,6 +396,7 @@ async def check_sol(session):
             status
         )
 
+
 # =========================
 # USDT ERC-20 MONITOR
 # =========================
@@ -422,6 +455,7 @@ async def check_usdt(session):
             status
         )
 
+
 # =========================
 # PAYMENT CHECK LOOP
 # =========================
@@ -444,9 +478,11 @@ async def check_payments():
             except Exception as e:
                 print(f"{name} payment check error:", e)
 
+
 @check_payments.before_loop
 async def before_payment_check():
     await bot.wait_until_ready()
+
 
 # =========================
 # BOT EVENTS
@@ -464,6 +500,7 @@ async def on_ready():
 
     if not check_payments.is_running():
         check_payments.start()
+
 
 # =========================
 # START BOT
