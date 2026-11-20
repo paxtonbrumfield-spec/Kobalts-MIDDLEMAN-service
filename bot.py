@@ -101,7 +101,6 @@ async def record_payment(coin, txid, amount, status):
 
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True
 
 bot = commands.Bot(
     command_prefix="!",
@@ -162,6 +161,81 @@ def make_embed(coin, address):
 
 
 # =========================
+# DEAL CONFIRMATION BUTTON
+# =========================
+
+class ConfirmView(discord.ui.View):
+
+    def __init__(self, person1, person2):
+        super().__init__(timeout=3600)
+
+        self.person1 = person1
+        self.person2 = person2
+        self.participants = {person1.id, person2.id}
+        self.confirmed = set()
+
+    @discord.ui.button(
+        label="Confirm (0/2)",
+        style=discord.ButtonStyle.success,
+        emoji="✅"
+    )
+    async def confirm_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        user_id = interaction.user.id
+
+        if user_id not in self.participants:
+            await interaction.response.send_message(
+                "You are not part of this deal.",
+                ephemeral=True
+            )
+            return
+
+        if user_id in self.confirmed:
+            await interaction.response.send_message(
+                "You have already confirmed this deal.",
+                ephemeral=True
+            )
+            return
+
+        self.confirmed.add(user_id)
+
+        if len(self.confirmed) == 2:
+
+            button.label = "Both Confirmed"
+            button.disabled = True
+
+            await interaction.response.edit_message(
+                content=(
+                    "✅ **DEAL CONFIRMED!**\n\n"
+                    f"{self.person1.mention} and "
+                    f"{self.person2.mention} have both confirmed "
+                    "the deal details."
+                ),
+                view=self
+            )
+
+        else:
+
+            button.label = "Confirm (1/2)"
+
+            await interaction.response.edit_message(
+                content=(
+                    f"✅ {interaction.user.mention} confirmed.\n"
+                    "Waiting for the other person to confirm."
+                ),
+                view=self
+            )
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+# =========================
 # COMMAND CONTEXT SETTINGS
 # =========================
 
@@ -181,58 +255,7 @@ def install_types():
 
 
 # =========================
-# PRIVATE COMMAND GROUP
-# =========================
-
-private_group = app_commands.Group(
-    name="private",
-    description="Private commands"
-)
-
-
-@private_group.command(
-    name="type",
-    description="Send information only you can see"
-)
-@dm_contexts()
-@install_types()
-async def private_type(
-    interaction: discord.Interaction,
-    message: str
-):
-
-    await interaction.response.send_message(
-        f"🔒 **YOUR PRIVATE INFORMATION**\n\n{message}",
-        ephemeral=True
-    )
-
-
-bot.tree.add_command(private_group)
-
-
-# =========================
-# RELEASE INFORMATION
-# =========================
-
-@bot.tree.command(
-    name="release_information",
-    description="Release information publicly in the chat"
-)
-@dm_contexts()
-@install_types()
-async def release_information(
-    interaction: discord.Interaction,
-    message: str
-):
-
-    await interaction.response.send_message(
-        f"📢 **RELEASED INFORMATION**\n\n{message}",
-        allowed_mentions=discord.AllowedMentions.none()
-    )
-
-
-# =========================
-# BTC COMMAND
+# SLASH COMMANDS
 # =========================
 
 @bot.tree.command(
@@ -242,15 +265,10 @@ async def release_information(
 @dm_contexts()
 @install_types()
 async def btc_cmd(interaction: discord.Interaction):
-
     await interaction.response.send_message(
         embed=make_embed("btc", ADDRESSES["btc"])
     )
 
-
-# =========================
-# LTC COMMAND
-# =========================
 
 @bot.tree.command(
     name="ltc",
@@ -259,15 +277,10 @@ async def btc_cmd(interaction: discord.Interaction):
 @dm_contexts()
 @install_types()
 async def ltc_cmd(interaction: discord.Interaction):
-
     await interaction.response.send_message(
         embed=make_embed("ltc", ADDRESSES["ltc"])
     )
 
-
-# =========================
-# SOL COMMAND
-# =========================
 
 @bot.tree.command(
     name="sol",
@@ -276,15 +289,10 @@ async def ltc_cmd(interaction: discord.Interaction):
 @dm_contexts()
 @install_types()
 async def sol_cmd(interaction: discord.Interaction):
-
     await interaction.response.send_message(
         embed=make_embed("sol", ADDRESSES["sol"])
     )
 
-
-# =========================
-# USDT COMMAND
-# =========================
 
 @bot.tree.command(
     name="usdt",
@@ -293,7 +301,6 @@ async def sol_cmd(interaction: discord.Interaction):
 @dm_contexts()
 @install_types()
 async def usdt_cmd(interaction: discord.Interaction):
-
     await interaction.response.send_message(
         embed=make_embed("usdt", ADDRESSES["usdt"])
     )
@@ -338,203 +345,40 @@ async def tos_cmd(interaction: discord.Interaction):
 
 
 # =========================
-# DEAL CONFIRMATION BUTTON
-# =========================
-
-class ConfirmView(discord.ui.View):
-
-    def __init__(self, creator, eligible_users):
-        super().__init__(timeout=3600)
-
-        self.creator = creator
-        self.eligible_users = set(eligible_users)
-        self.confirmed = set()
-        self.message = None
-
-    @discord.ui.button(
-        label="Confirm (0/2)",
-        style=discord.ButtonStyle.success,
-        emoji="✅"
-    )
-    async def confirm_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-        user_id = interaction.user.id
-
-        # Only other eligible members can confirm
-        if user_id not in self.eligible_users:
-
-            await interaction.response.send_message(
-                "❌ You are not eligible to confirm this deal.",
-                ephemeral=True
-            )
-            return
-
-        # Prevent duplicate confirmations
-        if user_id in self.confirmed:
-
-            await interaction.response.send_message(
-                "You have already confirmed this deal.",
-                ephemeral=True
-            )
-            return
-
-        self.confirmed.add(user_id)
-
-        count = len(self.confirmed)
-
-        if count >= 2:
-
-            button.label = "Both Confirmed"
-            button.disabled = True
-
-            await interaction.response.edit_message(
-                content=(
-                    "✅ **DEAL FULLY CONFIRMED!**\n\n"
-                    f"Created by: {self.creator.mention}\n\n"
-                    "**Both participants confirmed:**\n"
-                    + "\n".join(
-                        f"✅ <@{uid}>" for uid in self.confirmed
-                    )
-                ),
-                view=self
-            )
-
-            self.stop()
-
-        else:
-
-            button.label = f"Confirm ({count}/2)"
-
-            await interaction.response.edit_message(
-                content=(
-                    "📋 **DEAL CONFIRMATION**\n\n"
-                    f"Created by: {self.creator.mention}\n\n"
-                    f"✅ {interaction.user.mention} confirmed.\n"
-                    "Waiting for one more person to confirm."
-                ),
-                view=self
-            )
-
-    async def on_timeout(self):
-
-        for item in self.children:
-            item.disabled = True
-
-        if self.message:
-
-            try:
-                await self.message.edit(view=self)
-
-            except discord.HTTPException:
-                pass
-
-
-# =========================
 # CONFIRM COMMAND
 # =========================
 
 @bot.tree.command(
     name="confirm",
-    description="Have two other people confirm the deal"
+    description="Both people must confirm the deal"
 )
 @dm_contexts()
 @install_types()
 async def confirm_cmd(
     interaction: discord.Interaction,
-    deal_information: str
+    other_person: discord.User
 ):
 
-    eligible_users = set()
-
-    # SERVER CHANNEL
-    if interaction.guild:
-
-        try:
-            members = [
-                member async for member
-                in interaction.guild.fetch_members(limit=None)
-            ]
-
-        except discord.HTTPException:
-            members = interaction.guild.members
-
-        for member in members:
-
-            if member.id == interaction.user.id:
-                continue
-
-            if member.bot:
-                continue
-
-            if not interaction.channel.permissions_for(member).view_channel:
-                continue
-
-            if not interaction.channel.permissions_for(member).send_messages:
-                continue
-
-            eligible_users.add(member.id)
-
-    # GROUP DM
-    else:
-
-        recipients = getattr(
-            interaction.channel,
-            "recipients",
-            []
-        )
-
-        # Also support regular one-to-one DMs
-        recipient = getattr(
-            interaction.channel,
-            "recipient",
-            None
-        )
-
-        if recipient:
-            recipients = list(recipients) + [recipient]
-
-        for member in recipients:
-
-            if member.id == interaction.user.id:
-                continue
-
-            if member.bot:
-                continue
-
-            eligible_users.add(member.id)
-
-    # Require two other people
-    if len(eligible_users) < 2:
-
+    if other_person.id == interaction.user.id:
         await interaction.response.send_message(
-            "❌ There must be at least two other people "
-            "in this chat to start a confirmation.",
+            "You cannot confirm a deal with yourself.",
             ephemeral=True
         )
         return
 
     view = ConfirmView(
         interaction.user,
-        eligible_users
+        other_person
     )
 
     await interaction.response.send_message(
-        "📋 **DEAL CONFIRMATION**\n\n"
-        f"**Created by:** {interaction.user.mention}\n\n"
-        f"**Deal Information:**\n{deal_information}\n\n"
-        "Two other people in this chat must review "
-        "the information and press the button below.\n\n"
-        "⚠️ The person who created this confirmation "
-        "cannot confirm it.",
-        view=view,
-        allowed_mentions=discord.AllowedMentions.none()
+        "**DEAL CONFIRMATION**\n\n"
+        f"Person 1: {interaction.user.mention}\n"
+        f"Person 2: {other_person.mention}\n\n"
+        "Both people must review the deal details "
+        "and press the button below to confirm.",
+        view=view
     )
-
-    view.message = await interaction.original_response()
 
 
 # =========================
@@ -543,13 +387,9 @@ async def confirm_cmd(
 
 async def check_btc(session):
 
-    url = (
-        f"https://mempool.space/api/address/"
-        f"{ADDRESSES['btc']}/txs"
-    )
+    url = f"https://mempool.space/api/address/{ADDRESSES['btc']}/txs"
 
     async with session.get(url) as resp:
-
         if resp.status != 200:
             return
 
@@ -561,7 +401,6 @@ async def check_btc(session):
         received = 0
 
         for output in tx.get("vout", []):
-
             if output.get("scriptpubkey_address") == ADDRESSES["btc"]:
                 received += output.get("value", 0)
 
@@ -594,7 +433,6 @@ async def check_ltc(session):
     )
 
     async with session.get(url) as resp:
-
         if resp.status != 200:
             return
 
@@ -606,7 +444,6 @@ async def check_ltc(session):
         received = 0
 
         for output in tx.get("outputs", []):
-
             if ADDRESSES["ltc"] in output.get("addresses", []):
                 received += output.get("value", 0)
 
@@ -828,7 +665,6 @@ async def check_payments():
 
 @check_payments.before_loop
 async def before_payment_check():
-
     await bot.wait_until_ready()
 
 
@@ -865,4 +701,3 @@ if __name__ == "__main__":
 
     init_database()
     bot.run(TOKEN)
-    
